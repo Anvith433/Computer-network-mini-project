@@ -1,12 +1,44 @@
-# React + Vite
+# Chatbot Frontend
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+React + Vite chat client for the computer networks mini project. Each question takes this path:
 
-Currently, two official plugins are available:
+```
+Browser  ──HTTP POST /ask──▶  Flask backend (:5000)  ──TCP socket──▶  chatbot server (:12345)
+```
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react/README.md) uses [Babel](https://babeljs.io/) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+## Running
 
-## Expanding the ESLint configuration
+```bash
+npm install
+npm run dev            # http://localhost:5173
+npm run dev -- --host  # also reachable from other machines on the LAN
+```
 
-If you are developing a production application, we recommend using TypeScript and enable type-aware lint rules. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+Start the Flask backend (`chatbot-backend/server.py`) and the socket server it points to first.
+
+## Configuration
+
+By default the app calls the backend on port `5000` of whatever host served the page, so it works both
+on `localhost` and when opened from another machine via the LAN IP. To use a different backend, set
+`VITE_API_URL`:
+
+```bash
+VITE_API_URL=http://192.168.1.20:5000 npm run dev
+```
+
+## Features
+
+- Chat bubbles with timestamps and round-trip latency for every reply
+- Connection status in the header that shows which hop failed: backend offline, socket server error, or timeout
+- Typing indicator while waiting, and a Retry button on failed requests
+- Multi-line input (<kbd>Shift</kbd> + <kbd>Enter</kbd>), suggested starter questions, and copy-to-clipboard
+- Conversation saved in `localStorage`, light/dark theme toggle, responsive layout for phones
+
+## Scripts
+
+| Command           | Description                     |
+| ----------------- | ------------------------------- |
+| `npm run dev`     | Start the dev server            |
+| `npm run build`   | Production build into `dist/`   |
+| `npm run preview` | Serve the production build      |
+| `npm run lint`    | Run ESLint                      |

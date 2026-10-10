@@ -1,107 +1,102 @@
-// // src/App.jsx
-// import { useState } from 'react';
-// import axios from 'axios';
-// import './App.css';
-
-// function App() {
-//   const [question, setQuestion] = useState('');
-//   const [messages, setMessages] = useState([]);
-
-//   const sendQuestion = async () => {
-//     if (!question.trim()) {
-//       alert('Please enter a question!');
-//       return;
-//     }
-
-//     // Add user's question to the chat
-//     setMessages(prev => [...prev, { sender: 'You', text: question }]);
-
-//     try {
-//       // Send question to the Flask backend
-//       const response = await axios.post('http://localhost:5000/ask', { question });
-//       const answer = response.data.answer;
-//       // Add server's response to the chat
-//       setMessages(prev => [...prev, { sender: 'Server', text: answer }]);
-//     } catch (error) {
-//       setMessages(prev => [...prev, { sender: 'Error', text: error.message }]);
-//     }
-
-//     // Clear the input field
-//     setQuestion('');
-//   };
-
-//   return (
-//     <div className="app">
-//       <h1>AI Chatbot</h1>
-//       <div className="chat-area">
-//         {messages.map((msg, index) => (
-//           <p key={index} className={msg.sender.toLowerCase()}>
-//             {msg.sender}: {msg.text}
-//           </p>
-//         ))}
-//       </div>
-//       <div className="input-area">
-//         <input
-//           type="text"
-//           value={question}
-//           onChange={(e) => setQuestion(e.target.value)}
-//           onKeyUp={(e) => e.key === 'Enter' && sendQuestion()}
-//           placeholder="Enter your question"
-//         />
-//         <button onClick={sendQuestion}>Send</button>
-//       </div>
-//     </div>
-//   );
-// }
-
-// export default App;
-
 // src/App.jsx
-import { useState } from 'react';
-import axios from 'axios';
+import { useEffect, useRef, useState } from 'react';
+import { API_HOST, askQuestion } from './api';
+import Header from './components/Header';
+import EmptyState from './components/EmptyState';
+import Message, { TypingIndicator } from './components/Message';
+import Composer from './components/Composer';
 import './App.css';
 
-function App() {
-  const [question, setQuestion] = useState('');
-  const [messages, setMessages] = useState([]);
+const STORAGE_KEY = 'chatbot.messages';
 
-  const sendQuestion = async () => {
-    if (!question.trim()) {
-      alert('Please enter a question!');
-      return;
-    }
-    setMessages(prev => [...prev, { sender: 'You', text: question }]);
+// crypto.randomUUID() needs a secure context, which a plain http:// LAN address is not.
+let counter = 0;
+const makeId = () => `${Date.now().toString(36)}-${(counter++).toString(36)}`;
+
+function loadMessages() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(STORAGE_KEY));
+    return Array.isArray(saved) ? saved : [];
+  } catch {
+    return [];
+  }
+}
+
+function App() {
+  const [messages, setMessages] = useState(loadMessages);
+  const [pending, setPending] = useState(false);
+  const [connection, setConnection] = useState('idle');
+  const chatRef = useRef(null);
+
+  useEffect(() => {
     try {
-      const response = await axios.post('http://localhost:5000/ask', { question });
-      setMessages(prev => [...prev, { sender: 'Server', text: response.data.answer }]);
-    } catch (error) {
-      setMessages(prev => [...prev, { sender: 'Error', text: error.message }]);
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(messages));
+    } catch {
+      // Storage unavailable (private mode, quota); the chat still works.
     }
-    setQuestion('');
+  }, [messages]);
+
+  useEffect(() => {
+    const chat = chatRef.current;
+    chat.scrollTop = chat.scrollHeight;
+  }, [messages, pending]);
+
+  const addMessage = (message) =>
+    setMessages((prev) => [...prev, { id: makeId(), time: Date.now(), ...message }]);
+
+  const request = async (question) => {
+    setPending(true);
+    try {
+      const { answer, latency } = await askQuestion(question);
+      addMessage({ role: 'bot', text: answer, latency });
+      setConnection('online');
+    } catch (error) {
+      addMessage({ role: 'error', text: error.message, question });
+      setConnection(error.kind ?? 'offline');
+    } finally {
+      setPending(false);
+    }
   };
+
+  // Returns whether the question was accepted, so the composer knows to clear.
+  const send = (text) => {
+    const question = text.trim();
+    if (!question || pending) return false;
+    addMessage({ role: 'user', text: question });
+    request(question);
+    return true;
+  };
+
+  const retry = (errorMessage) => {
+    if (pending) return;
+    setMessages((prev) => prev.filter((m) => m.id !== errorMessage.id));
+    request(errorMessage.question);
+  };
+
+  const clear = () => {
+    if (window.confirm('Clear the whole conversation?')) setMessages([]);
+  };
+
+  const isEmpty = messages.length === 0 && !pending;
 
   return (
     <div className="app">
-      <header>
-        <h1>AI Chatbot</h1>
-      </header>
-      <main className="chat-area">
-        {messages.map((msg, index) => (
-          <p key={index} className={msg.sender.toLowerCase()}>
-            <span className="sender">{msg.sender}:</span> {msg.text}
-          </p>
-        ))}
+      <Header connection={connection} canClear={messages.length > 0 && !pending} onClear={clear} />
+
+      <main className="chat" ref={chatRef}>
+        <div className="container chat-inner" role="log" aria-label="Conversation">
+          {isEmpty ? (
+            <EmptyState apiHost={API_HOST} onPick={send} />
+          ) : (
+            messages.map((message) => (
+              <Message key={message.id} message={message} onRetry={retry} retryDisabled={pending} />
+            ))
+          )}
+          {pending && <TypingIndicator />}
+        </div>
       </main>
-      <footer className="input-area">
-        <input
-          type="text"
-          value={question}
-          onChange={(e) => setQuestion(e.target.value)}
-          onKeyUp={(e) => e.key === 'Enter' && sendQuestion()}
-          placeholder="Type your question here..."
-        />
-        <button onClick={sendQuestion}>Send</button>
-      </footer>
+
+      <Composer onSend={send} pending={pending} />
     </div>
   );
 }
